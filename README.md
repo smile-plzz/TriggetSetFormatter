@@ -1,45 +1,51 @@
 # SPW Trigger Set Formatter
 
-A single-page React app that ingests JSON exported from Shopify Product Widgets (SPW) and turns trigger sets into filterable tables with CSV export.
+A standalone web page that ingests JSON exported from Shopify Product Widgets (SPW) and turns trigger sets into filterable tables with CSV export.
 
-## Getting started
+## Running locally
 
-```bash
-npm install
-npm run dev
-```
-
-Open http://localhost:5173 to use the formatter locally. Paste JSON, drop `.json` files, or load the included tiny example to explore the UI.
-
-## Building for production
+No build tooling is required. Open `index.html` directly in any modern browser:
 
 ```bash
-npm run build
+# macOS
+open index.html
+
+# Windows
+start index.html
+
+# Linux (GNOME)
+xdg-open index.html
 ```
 
-The optimized assets will be created in `dist/`. You can deploy that folder to any static host such as Netlify, Vercel, Cloudflare Pages, or GitHub Pages. For previewing the production build locally run:
+You can also serve the folder with any static HTTP server (for example `python -m http.server`) and browse to `http://localhost:8000`.
 
-```bash
-npm run preview
-```
+## Deploying
 
-## Deployment tips
+Because the project is a static bundle (HTML + CSS + JS), you can deploy it by uploading the repository contents to any static host. Two popular options:
 
-1. Push this repository to a Git host (GitHub, GitLab, Bitbucket).
-2. Connect the repo to your hosting provider.
-3. Configure the build command (`npm run build`) and publish directory (`dist`).
-4. Each push to the default branch will build and deploy the latest version.
+### GitHub Pages
+
+1. Push this repository to GitHub.
+2. In the repository settings, open **Pages**.
+3. Choose the `main` branch and the `/ (root)` folder, then save.
+4. GitHub will publish the site at `https://<your-username>.github.io/<repository-name>/`.
+
+### Netlify / Vercel / Cloudflare Pages
+
+1. Create a new site and connect it to your Git provider.
+2. Select this repository. No build command is required.
+3. Set the publish directory to the repository root.
+4. Trigger a deploy from the provider’s dashboard.
+
+Once hosted, share the URL provided by your platform to grant access to the formatter.
 
 ## Project structure
 
 ```
-├── index.html
-├── package.json
-├── vite.config.js
-└── src
-    ├── App.jsx
-    ├── index.css
-    └── main.jsx
+├── App.jsx        # React component rendered via Babel at runtime
+├── index.html     # Entry HTML file (loads React from CDN)
+├── styles.css     # Global styles for the UI
+└── README.md
 ```
 
-The parsing logic lives in `src/App.jsx`. Styles are maintained in `src/index.css` and loaded globally.
+Key logic lives in `App.jsx`. Styles are declared globally in `styles.css` and automatically loaded by `index.html`.

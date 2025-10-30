@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+const { useEffect, useMemo, useState } = React;
 
 /**
  * Format numbers as currency-like strings.
@@ -36,7 +36,7 @@ function downloadTextFile(filename, text) {
  * @param {string} raw
  * @returns {Array<Record<string, unknown>>}
  */
-export function parsePossiblyMany(raw) {
+function parsePossiblyMany(raw) {
   if (!raw || !raw.trim()) return [];
   const txt = raw.trim();
   try {
@@ -270,7 +270,7 @@ function ProductCard({ product, rows }) {
   );
 }
 
-export default function App() {
+function App() {
   const [raw, setRaw] = useState("");
   const [sets, setSets] = useState([]);
   const [error, setError] = useState("");
@@ -729,3 +729,6 @@ export default function App() {
     </div>
   );
 }
+
+window.App = App;
+window.parsePossiblyMany = parsePossiblyMany;
