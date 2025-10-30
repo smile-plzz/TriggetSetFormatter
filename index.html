@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Product Explorer – Enhanced</title>
+  <title>Product Explorer – Enhanced + Paste</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <style>
     :root {
@@ -35,9 +35,10 @@
     .btn.danger { color: var(--danger); border-color: #fca5a5; }
     .btn.danger:hover { background: #fee2e2; }
     .controls label { font-size: 13px; color: var(--muted); display:block; margin-bottom:6px; font-weight: 500; }
-    input[type='text'], input[type='number'], select {
+    input[type='text'], input[type='number'], select, textarea {
       width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:12px; background:var(--card); color:var(--fg); font-size: 14px;
     }
+    textarea { min-height: 120px; font-family: monospace; resize: vertical; }
     table { width:100%; border-collapse: collapse; font-size: 14px; }
     thead th {
       position: sticky; top: 0; background: #f3f4f6; text-align:left; padding:10px; border-bottom:1px solid var(--border); white-space:nowrap; cursor: pointer; user-select: none; font-weight: 600;
@@ -45,7 +46,7 @@
     [data-theme="dark"] thead th { background: #334155; }
     thead th:hover { background: #e5e7eb; }
     [data-theme="dark"] thead th:hover { background: #475569; }
-    thead th::after { content: " ↕"; opacity: 0.3; font-size: 12px; }
+    thead th::after { content: " up-down"; opacity: 0.3; font-size: 12px; }
     tbody td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align: top; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; margin:0 4px 4px 0; font-size: 12px; }
     .chips { display:flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow:auto; padding: 4px 0; }
@@ -83,7 +84,7 @@
     <header>
       <div>
         <h1>Product Explorer</h1>
-        <p class="muted">Upload .txt / .json / .rtf / .pdf → filter, choose fields, visualize, export</p>
+        <p class="muted">Upload files or <strong>paste data</strong> → filter trigger & upsell → export</p>
       </div>
       <div class="toolbar">
         <input id="fileInput" type="file" accept=".txt,.json,.rtf,.pdf" multiple hidden />
@@ -97,6 +98,18 @@
       </div>
     </header>
 
+    <!-- Paste Data Section -->
+    <section class="row" style="margin-bottom:12px;">
+      <div class="card pad controls" style="grid-column: span 12;">
+        <label for="pasteInput">Paste JSON / Text / RTF</label>
+        <textarea id="pasteInput" placeholder='Paste your data here (e.g. JSON array of products, or raw text)...'></textarea>
+        <div style="margin-top:8px;">
+          <button class="btn sm" id="parsePasteBtn">Parse Pasted Data</button>
+          <span class="muted" style="margin-left:8px; font-size:12px;">Supports JSON, plain text, RTF</span>
+        </div>
+      </div>
+    </section>
+
     <section class="row" style="margin-bottom:12px;">
       <div class="card pad controls" style="grid-column: span 12; @media (min-width: 768px) { grid-column: span 8; }">
         <div id="dropzone" class="dropzone">Drag & drop files here or click “Upload”</div>
@@ -104,7 +117,7 @@
       </div>
       <div class="card pad controls" style="grid-column: span 12; @media (min-width: 768px) { grid-column: span 4; }">
         <label for="searchInput">Quick search</label>
-        <input id="searchInput" type="text" placeholder="Title, vendor, tags, id..." />
+        <input id="searchInput" type="text" placeholder="Title, vendor, tags, id, trigger, upsell..." />
       </div>
     </section>
 
@@ -135,6 +148,7 @@
       <div class="card pad" style="grid-column: span 12;">
         <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">Fields to show</label>
         <div id="fieldChooser" class="chips"></div>
+        <div id="quickBtns" style="margin-top:8px;"></div>
       </div>
     </section>
 
@@ -160,9 +174,8 @@
       </div>
     </section>
 
-    <footer>Built client-side. Your files never leave the browser. <span id="version">v2.1</span></footer>
+    <footer>Built client-side. Your data never leaves the browser. <span id="version">v2.2</span></footer>
   </div>
-
   <div class="toast" id="toast"></div>
 
   <!-- Chart.js -->
@@ -192,11 +205,14 @@
       minPrice: document.getElementById('minPrice'),
       maxPrice: document.getElementById('maxPrice'),
       fieldChooser: document.getElementById('fieldChooser'),
+      quickBtns: document.getElementById('quickBtns'),
       tableHead: document.getElementById('tableHead'),
       tableBody: document.getElementById('tableBody'),
       countLabel: document.getElementById('countLabel'),
       chart: document.getElementById('chart'),
-      toast: document.getElementById('toast')
+      toast: document.getElementById('toast'),
+      pasteInput: document.getElementById('pasteInput'),
+      parsePasteBtn: document.getElementById('parsePasteBtn')
     };
 
     // ========== UTILS ==========
@@ -204,15 +220,6 @@
       els.toast.textContent = msg;
       els.toast.className = `toast show`;
       setTimeout(() => els.toast.className = 'toast', duration);
-    }
-
-    function readFileAsText(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(reader.error);
-        reader.onload = () => resolve(reader.result);
-        reader.readAsText(file);
-      });
     }
 
     function sanitizeRTFKeepJSON(rtf) {
@@ -229,10 +236,7 @@
 
     function extractJSON(text) {
       try { return JSON.parse(text); } catch {}
-      const patterns = [
-        /\[\s*\{/,
-        /{\s*"(id|product_id|trigger_set|products)"/
-      ];
+      const patterns = [ /\[\s*\{/, /{\s*"(id|product_id|trigger_set|products)"/ ];
       for (const regex of patterns) {
         const match = regex.exec(text);
         if (match) {
@@ -286,6 +290,16 @@
       const inv = variants.map(v => asNumber(v.inventory_quantity || v.inventory)).filter(v => v !== null);
       const available = variants.some(v => v.available ?? v.variant_available ?? false);
 
+      const trigger = p.trigger_set
+        ? (Array.isArray(p.trigger_set) ? p.trigger_set.join(', ') : String(p.trigger_set))
+        : null;
+
+      const upsell = p.upsell_products || p.upsells
+        ? (Array.isArray(p.upsell_products) ? p.upsell_products.map(u=>u.title||u.id).join(', ')
+           : Array.isArray(p.upsells) ? p.upsells.map(u=>u.title||u.id).join(', ')
+           : null)
+        : null;
+
       return {
         source,
         product_id: p.id || p.product_id,
@@ -299,7 +313,9 @@
         price_min: prices.length ? Math.min(...prices) : null,
         price_max: prices.length ? Math.max(...prices) : null,
         inventory_total: inv.length ? inv.reduce((a,b) => a + b, 0) : null,
-        available
+        available,
+        trigger,
+        upsell
       };
     }
 
@@ -312,7 +328,7 @@
           else Object.values(obj).forEach(v => process(v, src));
         }
       };
-      process(data, "unknown");
+      process(data, "pasted");
       return rows.length ? rows : [deriveProductRow(data, "raw")];
     }
 
@@ -329,7 +345,7 @@
     function renderFileList() {
       els.fileList.innerHTML = state.files.map((f, i) => `
         <div class="file-item">
-          <span title="${escapeHtml(f.file.name)}">${escapeHtml(f.file.name)} (${f.status})</span>
+          <span title="${escapeHtml(f.file?.name || 'Pasted Data')}">${escapeHtml(f.file?.name || 'Pasted Data')} (${f.status})</span>
           <button class="btn sm danger" onclick="removeFile(${i})" ${state.processing ? 'disabled' : ''}>Remove</button>
         </div>
       `).join('');
@@ -338,7 +354,7 @@
     window.removeFile = (i) => {
       state.files.splice(i, 1);
       state.rows = state.files.filter(f => f.status === 'success').flatMap(f => f.rows);
-      renderFileList(); renderFieldChooser(); renderVendors(); renderTable();
+      renderFieldChooser(); renderVendors(); renderTable();
     };
 
     function renderFieldChooser() {
@@ -360,6 +376,31 @@
         lbl.appendChild(cb); lbl.appendChild(span);
         els.fieldChooser.appendChild(lbl);
       });
+      renderQuickButtons();
+    }
+
+    function renderQuickButtons() {
+      if (els.quickBtns.querySelector('.quick-btns')) return;
+      const btns = document.createElement('div');
+      btns.className = 'quick-btns';
+      btns.innerHTML = `
+        <button class="btn sm" id="showTriggerOnly">Trigger only</button>
+        <button class="btn sm" id="showUpsellOnly">Upsell only</button>
+        <button class="btn sm" id="showBoth">Trigger + Upsell</button>
+      `;
+      els.quickBtns.appendChild(btns);
+
+      document.getElementById('showTriggerOnly').onclick = () => setFields(['trigger']);
+      document.getElementById('showUpsellOnly').onclick = () => setFields(['upsell']);
+      document.getElementById('showBoth').onclick = () => setFields(['trigger','upsell']);
+    }
+
+    function setFields(wanted) {
+      state.selectedFields = wanted;
+      document.querySelectorAll('#fieldChooser input[type=checkbox]').forEach(cb => {
+        cb.checked = wanted.includes(cb.parentElement.textContent.trim());
+      });
+      renderTable();
     }
 
     function renderVendors() {
@@ -370,21 +411,16 @@
 
     function filterAndSort() {
       let filtered = state.rows;
-
-      // Search
       const query = els.searchInput.value.trim().toLowerCase();
       if (query) {
         filtered = filtered.filter(r =>
           JSON.stringify(Object.values(r)).toLowerCase().includes(query)
         );
       }
-
-      // Filters
       const vendor = els.vendorSelect.value;
       const avail = els.availSelect.value;
       const min = asNumber(els.minPrice.value);
       const max = asNumber(els.maxPrice.value);
-
       if (vendor) filtered = filtered.filter(r => r.product_vendor === vendor);
       if (avail !== "") filtered = filtered.filter(r => String(r.available) === avail);
       if (min !== null || max !== null) {
@@ -393,8 +429,6 @@
           return (min === null || p >= min) && (max === null || p <= max);
         });
       }
-
-      // Sorting
       if (state.sort.field) {
         filtered.sort((a, b) => {
           let av = a[state.sort.field], bv = b[state.sort.field];
@@ -403,7 +437,6 @@
           return state.sort.asc ? result : -result;
         });
       }
-
       state.filtered = filtered;
       els.countLabel.textContent = `${state.filtered.length} product${state.filtered.length === 1 ? '' : 's'}`;
       els.exportBtn.disabled = state.filtered.length === 0;
@@ -413,16 +446,13 @@
 
     function renderTable() {
       filterAndSort();
-
-      // Header with sort
       els.tableHead.innerHTML = state.selectedFields.map(f => {
         const sorted = state.sort.field === f;
         return `<th onclick="sortBy('${f}')">
           ${escapeHtml(f)}
-          ${sorted ? (state.sort.asc ? ' ↑' : ' ↓') : ''}
+          ${sorted ? (state.sort.asc ? ' up' : ' down') : ''}
         </th>`;
       }).join("");
-
       const rowsHtml = state.filtered.length ? state.filtered.map(r => {
         return "<tr>" + state.selectedFields.map(f => {
           let val = r[f];
@@ -444,9 +474,8 @@
           return `<td>${escapeHtml(String(val))}</td>`;
         }).join("") + "</tr>";
       }).join("") : `<tr><td colspan="${state.selectedFields.length}" style="text-align:center; color:var(--muted); padding:32px;">
-        No products match your filters. Try adjusting them or upload new files.
+        No products match your filters. Try adjusting them or paste/upload new data.
       </td></tr>`;
-
       els.tableBody.innerHTML = rowsHtml;
       renderChart();
     }
@@ -464,7 +493,6 @@
     function renderChart() {
       const labels = state.filtered.map(r => (r.product_title || r.product_id || "Unknown").slice(0, 20));
       const data = state.filtered.map(r => r.inventory_total ?? 0);
-
       if (state.chart) state.chart.destroy();
       state.chart = new Chart(els.chart.getContext("2d"), {
         type: "bar",
@@ -472,14 +500,8 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: true }
-          },
-          scales: {
-            x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 11 } } },
-            y: { beginAtZero: true }
-          }
+          plugins: { legend: { display: false }, tooltip: { enabled: true } },
+          scales: { x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 11 } } }, y: { beginAtZero: true } }
         }
       });
     }
@@ -514,13 +536,42 @@
       }
     }
 
+    // ========== PASTE HANDLING ==========
+    els.parsePasteBtn.addEventListener("click", async () => {
+      const text = els.pasteInput.value.trim();
+      if (!text) {
+        showToast("Paste some data first!", "warning");
+        return;
+      }
+      state.processing = true;
+      els.parsePasteBtn.disabled = true;
+      els.parsePasteBtn.innerHTML = '<span class="loader"></span> Parsing...';
+
+      try {
+        let parsed = extractJSON(text);
+        let rows = parsed ? flattenAnyJSON(parsed) : [];
+        const entry = { file: null, status: rows.length ? 'success' : 'empty', rows };
+        state.files.push(entry);
+        state.rows = state.files.filter(f => f.status === 'success').flatMap(f => f.rows);
+        renderFileList(); renderFieldChooser(); renderVendors(); renderTable();
+        showToast(`Pasted data: ${rows.length} products`, rows.length ? 'success' : 'warning');
+        els.pasteInput.value = '';
+      } catch (err) {
+        showToast("Failed to parse pasted data", "error");
+        console.error(err);
+      } finally {
+        state.processing = false;
+        els.parsePasteBtn.disabled = false;
+        els.parsePasteBtn.innerHTML = 'Parse Pasted Data';
+      }
+    });
+
     // ========== FILE HANDLING ==========
     async function handleFiles(files) {
       if (!files.length) return;
       state.processing = true;
       els.uploadBtn.disabled = true;
       els.uploadBtn.innerHTML = '<span class="loader"></span> Processing...';
-
       const newFiles = Array.from(files).map(file => ({ file, status: 'pending', rows: [] }));
       state.files.push(...newFiles);
       renderFileList();
@@ -528,10 +579,9 @@
       for (const entry of newFiles) {
         try {
           const ext = (entry.file.name.split(".").pop() || "").toLowerCase();
-          let text = await readFileAsText(entry.file);
+          let text = await new FileReader().readAsText(entry.file);
           if (ext === "rtf") text = sanitizeRTFKeepJSON(text);
           if (ext === "pdf") text = await pdfToText(entry.file);
-
           const parsed = extractJSON(text);
           const rows = parsed ? flattenAnyJSON(parsed) : [];
           entry.rows = rows;
@@ -543,11 +593,9 @@
           console.error(err);
         }
       }
-
       state.rows = state.files.filter(f => f.status === 'success').flatMap(f => f.rows);
       renderFieldChooser(); renderVendors(); renderTable();
       renderFileList();
-
       state.processing = false;
       els.uploadBtn.disabled = false;
       els.uploadBtn.innerHTML = 'Upload';
@@ -562,7 +610,6 @@
     }));
     els.dropzone.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
     els.dropzone.addEventListener("click", () => els.fileInput.click());
-
     els.uploadBtn.addEventListener("click", () => els.fileInput.click());
     els.fileInput.addEventListener("change", e => handleFiles(Array.from(e.target.files || [])));
     els.exportBtn.addEventListener("click", exportCSV);
@@ -575,11 +622,9 @@
       els.maxPrice.value = "";
       renderTable();
     });
-
     [els.searchInput, els.vendorSelect, els.availSelect, els.minPrice, els.maxPrice].forEach(el =>
       el.addEventListener("input", () => setTimeout(renderTable, 100))
     );
-
     els.themeBtn.addEventListener("click", () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
