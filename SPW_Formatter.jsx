@@ -1,11 +1,158 @@
+# Create a minimal Next.js + TypeScript + Tailwind project ready for Vercel,
+# and drop the user's component (as a client component) into it.
+
+import os, json, textwrap, zipfile, pathlib
+
+root = "/mnt/data/spw-formatter-vercel"
+os.makedirs(root, exist_ok=True)
+
+# package.json
+package_json = {
+  "name": "spw-formatter",
+  "private": True,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.2.10",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4",
+    "@types/node": "20.14.9",
+    "@types/react": "18.2.66",
+    "@types/react-dom": "18.2.22",
+    "tailwindcss": "3.4.10",
+    "postcss": "8.4.41",
+    "autoprefixer": "10.4.20"
+  }
+}
+os.makedirs(f"{root}", exist_ok=True)
+with open(f"{root}/package.json","w") as f:
+    json.dump(package_json, f, indent=2)
+
+# next.config.ts (optional, minimal)
+next_config = """import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default nextConfig;
+"""
+with open(f"{root}/next.config.ts","w") as f:
+    f.write(next_config)
+
+# tsconfig.json
+tsconfig = {
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": False,
+    "skipLibCheck": True,
+    "strict": False,
+    "noEmit": True,
+    "esModuleInterop": True,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": True,
+    "isolatedModules": True,
+    "jsx": "preserve",
+    "plugins": [{"name": "next"}],
+    "incremental": True
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}
+with open(f"{root}/tsconfig.json","w") as f:
+    json.dump(tsconfig, f, indent=2)
+
+# postcss.config.js
+postcss_cfg = """module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+"""
+with open(f"{root}/postcss.config.js","w") as f:
+    f.write(postcss_cfg)
+
+# tailwind.config.ts
+tailwind_cfg = """import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+export default config;
+"""
+with open(f"{root}/tailwind.config.ts","w") as f:
+    f.write(tailwind_cfg)
+
+# app directory
+os.makedirs(f"{root}/app", exist_ok=True)
+
+layout_tsx = """export const metadata = {
+  title: "SPW Formatter",
+  description: "Bulk trigger-set parser for migration",
+};
+
+import "./globals.css";
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
+"""
+with open(f"{root}/app/layout.tsx","w") as f:
+    f.write(layout_tsx)
+
+# globals.css
+os.makedirs(f"{root}/app", exist_ok=True)
+globals_css = """@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+"""
+with open(f"{root}/app/globals.css","w") as f:
+    f.write(globals_css)
+
+# components directory
+os.makedirs(f"{root}/components", exist_ok=True)
+
+# User's component as client component
+component_tsx = """\"use client\";
+
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
  * SPW Formatter — bulk trigger-set support (fixed)
  *
  * Fixes:
- *  - Unterminated RegExp in parsePossiblyMany (now uses /\n+/ correctly)
- *  - Literal newlines accidentally inserted into strings ("\n" now escaped)
+ *  - Unterminated RegExp in parsePossiblyMany (now uses /\\n+/ correctly)
+ *  - Literal newlines accidentally inserted into strings ("\\n" now escaped)
  *  - CSV export newline and toCSV escaping are corrected
  *
  * Enhancements:
@@ -45,7 +192,7 @@ export function parsePossiblyMany(raw: string) {
     return [obj];
   } catch {}
   // Try NDJSON (loose): split by lines and rebuild by balanced braces
-  const lines = txt.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const lines = txt.split(/\\n+/).map((l) => l.trim()).filter(Boolean);
   const out: any[] = [];
   let buffer = "";
   const flush = () => {
@@ -58,10 +205,10 @@ export function parsePossiblyMany(raw: string) {
     buffer = "";
   };
   for (const line of lines) {
-    buffer += (buffer ? "\n" : "") + line;
+    buffer += (buffer ? "\\n" : "") + line;
     // Heuristic: if braces appear balanced, attempt parse
-    const open = (buffer.match(/[\{\[]/g) || []).length;
-    const close = (buffer.match(/[\}\]]/g) || []).length;
+    const open = (buffer.match(/[\\{\\[]/g) || []).length;
+    const close = (buffer.match(/[\\}\\]]/g) || []).length;
     if (open > 0 && open === close) flush();
   }
   flush();
@@ -126,7 +273,7 @@ const tests: Test[] = [
   {
     name: "Parses NDJSON (3 lines)",
     run: () => {
-      const ndjson = [tinyExample[0], tinyExample[0], tinyExample[0]].map((o) => JSON.stringify(o)).join("\n");
+      const ndjson = [tinyExample[0], tinyExample[0], tinyExample[0]].map((o) => JSON.stringify(o)).join("\\n");
       const got = parsePossiblyMany(ndjson);
       return Array.isArray(got) && got.length === 3;
     },
@@ -134,7 +281,7 @@ const tests: Test[] = [
   {
     name: "Gracefully ignores malformed chunk",
     run: () => {
-      const ndjson = `${JSON.stringify(tinyExample[0])}\n{not json}\n${JSON.stringify(tinyExample[0])}`;
+      const ndjson = `${JSON.stringify(tinyExample[0])}\\n{not json}\\n${JSON.stringify(tinyExample[0])}`;
       const got = parsePossiblyMany(ndjson);
       return got.length === 2; // bad line is skipped
     },
@@ -151,7 +298,7 @@ function useTestResults() {
 }
 
 // ---------- Root component ----------
-export default function App() {
+export default function SPWFormatter() {
   const [raw, setRaw] = useState("");
   const [sets, setSets] = useState<any[]>([]); // array of trigger sets
   const [error, setError] = useState("");
@@ -322,7 +469,7 @@ export default function App() {
     const toCSV = (val: any) => {
       if (val === null || val === undefined) return "";
       const s = String(val).replaceAll('"', '""');
-      if (s.includes(",") || s.includes("\n") || s.includes('"')) return `"${s}"`;
+      if (s.includes(",") || s.includes("\\n") || s.includes('"')) return `\"${s}\"`;
       return s;
     };
     const lines = [cols.join(",")];
@@ -347,7 +494,7 @@ export default function App() {
       ].map(toCSV);
       lines.push(row.join(","));
     }
-    downloadTextFile("spw-visible-variants.csv", lines.join("\n"));
+    downloadTextFile("spw-visible-variants.csv", lines.join("\\n"));
   };
 
   const resetFilters = () => {
@@ -619,7 +766,7 @@ function ProductCard({ product, rows }: { product: any; rows: any[] }) {
               </tr>
             ) : (
               rows.map((v: any) => (
-                <tr key={v.variant_id+"-"+v.set_index+"-"+v.trigger_type} className="border-b last:border-0">
+                <tr key={v.variant_id+\"-\"+v.set_index+\"-\"+v.trigger_type} className="border-b last:border-0">
                   <td className="py-2 pr-3 font-mono text-xs">{v.set_index}</td>
                   <td className="py-2 pr-3">{v.trigger_type === 'upsell' ? <span className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Upsell</span> : <span className="inline-block px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">Product</span>}</td>
                   <td className="py-2 pr-3 font-medium">{v.variant_title || "—"}</td>
@@ -638,3 +785,31 @@ function ProductCard({ product, rows }: { product: any; rows: any[] }) {
     </div>
   );
 }
+"""
+with open(f"{root}/components/SPWFormatter.tsx","w") as f:
+    f.write(component_tsx)
+
+# app/page.tsx that renders the component
+page_tsx = """import SPWFormatter from "@/components/SPWFormatter";
+
+export default function Page() {
+  return <SPWFormatter />;
+}
+"""
+with open(f"{root}/app/page.tsx","w") as f:
+    f.write(page_tsx)
+
+# next-env.d.ts
+with open(f"{root}/next-env.d.ts","w") as f:
+    f.write("/// <reference types=\"next\" />\n/// <reference types=\"next/image-types/global\" />\n\n// NOTE: This file should not be edited\n// see https://nextjs.org/docs/basic-features/typescript for more information.\n")
+
+# README.md
+readme = """# SPW Formatter (Vercel-ready)
+
+A minimal Next.js 14 + TypeScript + Tailwind app that hosts your **SPW Formatter** tool.
+
+## Local dev
+
+```bash
+pnpm i    # or npm i / yarn
+pnpm dev  # or npm run dev
